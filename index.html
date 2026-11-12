@@ -45,6 +45,7 @@ async function unseal(pw,o){try{return dec.decode(await crypto.subtle.decrypt({n
 const ST=["Planned","In Progress","Done","Pending"],CL=["#6B7B8C","#F5A300","#1E9E5A","#D64545"],K="shut26b",$=s=>document.querySelector(s),ls=localStorage,cls=s=>s.replace(" ","");
 let S=null;try{S=JSON.parse(ls.getItem(K))}catch(e){}
 if(!S)S={jobs:SEED.map(j=>({...j,team:[],status:"Planned",notif:"",pm:"",mat:"",qty:"",price:"",planned:"",executed:"",rem:"",ts:0})),team:[],gone:[]};
+if(!S.tm){S.tm={};(S.team||[]).forEach(n=>S.tm[n]={ts:0,del:0});(S.gone||[]).forEach(n=>{if(!S.tm[n])S.tm[n]={ts:1,del:1}})}function derive(){S.team=Object.keys(S.tm).filter(k=>!S.tm[k].del)}derive();
 let tok=ls.shut_tok||"",role=tok?(ls.shut_role||"e"):"v",dirty=!!ls.shut_dirty,last=+ls.shut_last||0,msg="",busy=false,ip=null,tab="home",q="",fa="",fs="",fp="",st=0;const op=new Set();
 let repo=ls.shut_repo||(location.hostname.endsWith(".github.io")&&/^[\w-]+$/.test(location.pathname.split("/")[1]||"")?location.hostname.split(".")[0]+"/"+location.pathname.split("/")[1]:"");
 const ld=d=>{d=d||new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")},today=()=>ld(),addD=(s,n)=>{const d=new Date(s+"T12:00:00");d.setDate(d.getDate()+n);return ld(d)},lab=s=>new Date(s+"T12:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
@@ -52,8 +53,8 @@ let pd=today();
 const J=()=>S.jobs.filter(j=>!j.del),W=()=>role!="v",M=()=>role=="m",areas=()=>[...new Set(J().map(j=>j.area))],jb=id=>S.jobs.find(x=>x.id==id),cost=j=>(+j.qty||0)*(+j.price||0),fmt=n=>Math.round(n).toLocaleString("en-US"),ini=n=>n.split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const save=()=>{try{ls.setItem(K,JSON.stringify(S))}catch(e){toast("Could not save on this phone")}};
-const pub=()=>({v:1,jobs:S.jobs,team:S.team,gone:S.gone||[]}),API=()=>"https://api.github.com/repos/"+repo+"/contents/",H=()=>({Authorization:"Bearer "+tok,Accept:"application/vnd.github+json"}),raw=f=>repo?"https://raw.githubusercontent.com/"+repo+"/HEAD/"+f+"?t="+Date.now():f;
-function merge(r){if(!r||!r.jobs)return 0;const m=new Map(S.jobs.map(j=>[j.id,j]));let n=0;r.jobs.forEach(j=>{const o=m.get(j.id);if(!o||(j.ts||0)>(o.ts||0)){m.set(j.id,j);n++}});S.jobs=[...m.values()].sort((a,b)=>a.id-b.id);S.gone=[...new Set([...(S.gone||[]),...(r.gone||[])])];S.team=[...new Set([...S.team,...(r.team||[])])].filter(t=>!S.gone.includes(t));if(n)save();return n}
+const pub=()=>({v:2,jobs:S.jobs,tm:S.tm,team:S.team}),API=()=>"https://api.github.com/repos/"+repo+"/contents/",H=()=>({Authorization:"Bearer "+tok,Accept:"application/vnd.github+json"}),raw=f=>repo?"https://raw.githubusercontent.com/"+repo+"/HEAD/"+f+"?t="+Date.now():f;
+function merge(r){if(!r||!r.jobs)return 0;const m=new Map(S.jobs.map(j=>[j.id,j]));let n=0;r.jobs.forEach(j=>{const o=m.get(j.id);if(!o||(j.ts||0)>(o.ts||0)){m.set(j.id,j);n++}});S.jobs=[...m.values()].sort((a,b)=>a.id-b.id);const rt=r.tm||(()=>{const o={};(r.team||[]).forEach(x=>o[x]={ts:0,del:0});(r.gone||[]).forEach(x=>{if(!o[x])o[x]={ts:1,del:1}});return o})();Object.keys(rt).forEach(k=>{if(!S.tm[k]||rt[k].ts>S.tm[k].ts){S.tm[k]=rt[k];n++}});derive();if(n)save();return n}
 function chg(){save();if(tok){dirty=true;ls.shut_dirty=1;clearTimeout(st);st=setTimeout(sync,1500)}paint()}
 async function push(){if(!repo)throw{code:0};for(let k=0;k<3;k++){const r=await fetch(API()+"data.json?t="+Date.now(),{headers:H()});let sha;if(r.status==200){const f=await r.json();merge(JSON.parse(u8d(f.content)));sha=f.sha}else if(r.status!=404)throw{code:r.status};
 const p=await fetch(API()+"data.json",{method:"PUT",headers:H(),body:JSON.stringify({message:"App update",content:u8e(JSON.stringify(pub())),sha})});if(p.ok){dirty=false;delete ls.shut_dirty;return}if(p.status!=409&&p.status!=422)throw{code:p.status}}throw{code:0}}
@@ -120,9 +121,9 @@ done:()=>{const j=jb(v);j.status="Done";j.executed=today();j.ts=Date.now();chg()
 fa:()=>{fa=v;render()},fs:()=>{fs=v;render()},fp:()=>{fp=fp==v?"":v;render()},clr:()=>{fa=fs=fp=q="";render()},
 flt:()=>{fa="";fs=t.dataset.s||"";fp=t.dataset.p||"";q="";tab="jobs";render()},person:()=>{fp=v;fa=fs=q="";tab="jobs";render()},
 pday:()=>{pd=v=="0"?today():addD(pd,+v);render(true)},padd,cfg,
-addm:()=>{const n=$("#nm").value.trim();if(n&&!S.team.includes(n)){S.team.push(n);S.gone=(S.gone||[]).filter(x=>x!=n);chg();render(true)}},
-nmem:()=>{const n=$("#nn").value.trim(),s=[...document.querySelectorAll("#f [name=team]:checked")].map(x=>x.value);if(n){if(!S.team.includes(n)){S.team.push(n);S.gone=(S.gone||[]).filter(x=>x!=n);chg()}s.push(n)}$("#tgs").innerHTML=chipsTeam(s);$("#nn").value=""},
-rm:()=>{if(confirm("Remove "+v+" from the team and all jobs?")){S.team=S.team.filter(x=>x!=v);S.gone=[...(S.gone||[]),v];J().forEach(j=>{if(j.team.includes(v)){j.team=j.team.filter(x=>x!=v);j.ts=Date.now()}});chg();render(true)}},
+addm:()=>{const n=$("#nm").value.trim();if(!n){toast("Type a name first");return}if(S.team.includes(n)){toast("This name is already in the team");return}S.tm[n]={ts:Date.now(),del:0};derive();chg();render(true)},
+nmem:()=>{const n=$("#nn").value.trim(),s=[...document.querySelectorAll("#f [name=team]:checked")].map(x=>x.value);if(n){if(!S.team.includes(n)){S.tm[n]={ts:Date.now(),del:0};derive();chg()}s.push(n)}$("#tgs").innerHTML=chipsTeam(s);$("#nn").value=""},
+rm:()=>{if(confirm("Remove "+v+" from the team and all jobs?")){S.tm[v]={ts:Date.now(),del:1};derive();J().forEach(j=>{if(j.team.includes(v)){j.team=j.team.filter(x=>x!=v);j.ts=Date.now()}});chg();render(true)}},
 sync:()=>{dirty=dirty||false;sync()},inst:()=>{ip.prompt();ip=null},
 cv:()=>{const c=["id","area","desc","team","status","notif","pm","mat","qty","price","planned","executed","rem"];dl("shutdown-jobs.csv",[c.join(",")].concat(J().map(j=>c.map(k=>'"'+String(k=="team"?j.team.join("; "):j[k]??"").replace(/"/g,'""')+'"').join(","))).join("\n"),"text/csv")}})[a]()});
 document.addEventListener("input",e=>{if(e.target.id=="q"){q=e.target.value.toLowerCase();drawList()}if(e.target.id=="ps"){const s=e.target.value.toLowerCase();document.querySelectorAll(".pl label").forEach(l=>l.classList.toggle("hid",!l.dataset.t.includes(s)))}});
